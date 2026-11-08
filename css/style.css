@@ -584,3 +584,25 @@ body.ja-off .ja { display: none !important; }
 .device-voices { margin-top: 16px; font-size: 14px; }
 .device-voices summary { cursor: pointer; color: var(--ink-soft); }
 .device-voices .voice-rows { margin-top: 12px; }
+
+/* ---------- 界面语言切换 ---------- */
+.lang-switch { order: 2; display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); flex-shrink: 0; margin-left: 4px; }
+.lang-switch button { border: 0; background: transparent; padding: 5px 11px; cursor: pointer; font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+.lang-switch button.active { background: var(--ink); color: var(--bg); }
+.lang-switch button:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+body.lang-ja { font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", "Meiryo", var(--font); }
+body.lang-ja .ja-toggle { display: none; }
+.flash-face .zh-big.ja-mean { font-size: 30px; line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; }
+.option.jp { font-size: 16px; }
+.pt-jp .jp { color: var(--purple); font-weight: 700; font-size: 17px; }
+@media (max-width: 1024px) {
+  .lang-switch { order: 0; margin-left: auto; }
+  .topbar .gender-switch { margin-left: 6px; }
+}
+@media (max-width: 720px) {
+  .brand-text { font-size: 16px; }
+  .lang-switch button { padding: 5px 8px; }
+}
+@media (max-width: 400px) {
+  .brand-text { display: none; }
+}
