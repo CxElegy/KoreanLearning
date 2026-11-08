@@ -150,6 +150,27 @@
     });
   }
 
+  // ---------- 日语辅助 ----------
+  const JA_KEY = 'kl-ja-v1';
+  let jaOn = true;
+  try { jaOn = localStorage.getItem(JA_KEY) !== 'off'; } catch (e) { /* 忽略 */ }
+  function applyJa() {
+    document.body.classList.toggle('ja-off', !jaOn);
+    $$('[data-ja-toggle]').forEach((b) => {
+      b.classList.toggle('active', jaOn);
+      b.setAttribute('aria-pressed', String(jaOn));
+    });
+  }
+  // 日语文字（用日文字形显示汉字）
+  const jt = (t) => `<span class="jp" lang="ja">${esc(t)}</span>`;
+  // 单词的日语对照行
+  function jaWordLine(ko, withNote = false) {
+    const j = JA_VOCAB[ko];
+    if (!j) return '';
+    const [ja, kanji, note] = j;
+    return `<div class="ja ja-line"><span class="ja-tag">日</span>${jt(ja)}${kanji ? `<span class="kanji-badge">汉字词 ${jt(kanji)}</span>` : ''}${withNote && note ? `<div class="ja-note">${esc(note)}</div>` : ''}</div>`;
+  }
+
   // ---------- 韩文音节工具 ----------
   const SBASE = 0xac00, SCOUNT = 11172;
   const compose = (l, v, t) => String.fromCharCode(SBASE + (l * 21 + v) * 28 + t);
@@ -176,6 +197,7 @@
       ['phrases', '情景短语', '见面、点餐、问路、求助……开口就能用。'],
       ['grammar', '入门语法', '语序、助词、“是”和礼貌体，一次讲清。'],
       ['quiz', '测验巩固', '字母、词义、听力多种题型，检验学习效果。'],
+      ['japanese', '日韩对照', '会日语？借助助词、汉字词读音规律和敬语对照，学得更快。'],
     ];
     app.innerHTML = `
       <section class="hero">
@@ -200,11 +222,17 @@
         <div class="card stat"><div class="num">${acc}%</div><div class="label">答题正确率</div></div>
       </div>
 
+      <a class="card ja ja-banner" href="#/japanese">
+        <span class="ja-big jp" lang="ja">あ</span>
+        <div><b>已开启日语辅助</b><p>韩语和日语语序相同、助词几乎一一对应、汉字词读音成套对应。全站会在合适的地方显示日语对照，可随时用右上角的「あ」按钮关闭。</p></div>
+        <span class="go">日韩对照 →</span>
+      </a>
+
       <h2 class="section-title">今日一词</h2>
       <div class="card daily">
         <span class="word">${esc(daily.ko)}</span>
         ${dualBtns(daily.ko)}
-        <div class="meta"><div style="color:var(--red);font-weight:700">${esc(daily.roman)}</div><div>${esc(daily.zh)}</div></div>
+        <div class="meta"><div style="color:var(--red);font-weight:700">${esc(daily.roman)}</div><div>${esc(daily.zh)}</div>${jaWordLine(daily.ko)}</div>
       </div>
 
       <h2 class="section-title">学习路线</h2>
@@ -227,6 +255,7 @@
             <div class="glyph">${l.ch}</div>
             <div class="roman">${esc(l.roman)}</div>
             ${l.name ? `<div class="name">${esc(l.name)}</div>` : `<div class="name">${esc(l.sound)}</div>`}
+            ${JA_LETTER[l.ch] ? `<div class="ja kana jp" lang="ja">${esc(JA_LETTER[l.ch][0])}</div>` : ''}
           </button>`).join('')}
       </div>`;
     app.innerHTML = `
@@ -261,6 +290,7 @@
           <h3>${l.ch} ${l.name ? `<span class="ko">（${esc(l.name)}）</span>` : ''} · <span style="color:var(--red)">${esc(l.roman)}</span></h3>
           <p class="tip">${esc(l.tip)}</p>
           <div class="how"><b>发音方法：</b>${esc(HOW_TO[l.ch] || '')}</div>
+          ${JA_LETTER[l.ch] ? `<div class="how ja ja-how"><b>日语提示：</b>${jt(JA_LETTER[l.ch][0])} — ${esc(JA_LETTER[l.ch][1])}</div>` : ''}
           <div class="listen-row">
             <span class="listen-label ko">${esc(l.sound)}</span>${dualBtns(l.sound)}
             ${l.name ? `<span class="listen-label">名称 <span class="ko">${esc(l.name)}</span></span>${dualBtns(l.name)}` : ''}
@@ -289,12 +319,13 @@
     const toc = [
       ['p-voice', '声音设置'], ['p-keys', '发音特点'], ['p-triad', '松音·送气音·紧音'],
       ['p-vowel', '易混元音'], ['p-batchim', '收音'], ['p-rules', '音变规则'], ['p-mistakes', '常见误区'],
+      ['p-ja', '日语学习者捷径', 'ja'],
     ];
     app.innerHTML = `
       <h1 class="page-title">发音讲解</h1>
       <p class="page-sub">每个例子都可以分别用 👩 女声 和 👨 男声 收听，对比着练效果更好。建议跟读时录下自己的声音再对比。</p>
       <nav class="toc chips" aria-label="本页目录">
-        ${toc.map(([id, t]) => `<a class="chip" href="#/pronounce" data-jump="${id}">${t}</a>`).join('')}
+        ${toc.map(([id, t, cls]) => `<a class="chip ${cls || ''}" href="#/pronounce" data-jump="${id}">${t}</a>`).join('')}
       </nav>
 
       <h2 class="section-title" id="p-voice">🔈 声音设置 <small>选择男声 / 女声使用的语音</small></h2>
@@ -353,6 +384,7 @@
           <div class="card rule">
             <h3><span class="n">${i + 1}</span>${esc(r.name)} <span class="ko rule-ko">${esc(r.ko)}</span></h3>
             <p>${esc(r.rule)}</p>
+            ${JA_RULE_NOTES[r.name] ? `<div class="how ja ja-how"><b>日语联想：</b>${esc(JA_RULE_NOTES[r.name])}</div>` : ''}
             <div class="rule-examples">
               ${r.examples.map((x) => `
                 <div class="rule-ex">
@@ -362,6 +394,13 @@
             </div>
           </div>`).join('')}
       </div>
+
+      <section class="ja">
+        <h2 class="section-title" id="p-ja"><span class="ja-tag">日</span> 会日语的发音捷径 <small>很多难点你其实已经会了</small></h2>
+        <div class="ja-tips">
+          ${JA_PRON_TIPS.map((t) => `<div class="card ja-tip"><h3>${esc(t.title)}</h3><p>${esc(t.text)}</p></div>`).join('')}
+        </div>
+      </section>
 
       <h2 class="section-title" id="p-mistakes">中国学习者常见误区</h2>
       <div class="card mistakes-list">
@@ -588,7 +627,7 @@
       if (s.mode === 'list') {
         body.innerHTML = `<div class="word-list">${list.map((w) => `
           <div class="card word-row${progress.known[w.ko] ? ' known' : ''}">
-            <div class="w"><div class="k">${esc(w.ko)}</div><div class="r">${esc(w.roman)}</div><div class="z">${esc(w.zh)}</div></div>
+            <div class="w"><div class="k">${esc(w.ko)}</div><div class="r">${esc(w.roman)}</div><div class="z">${esc(w.zh)}</div>${jaWordLine(w.ko)}</div>
             ${progress.known[w.ko] ? '<span class="tick" title="已掌握">✓</span>' : ''}
             ${speakBtn(w.ko)}
           </div>`).join('')}</div>`;
@@ -609,6 +648,7 @@
               <div class="flash-face back">
                 <div class="zh-big">${esc(w.zh)}</div>
                 <div class="ko" style="font-size:20px">${esc(w.ko)}</div>
+                ${jaWordLine(w.ko, true)}
                 <span class="hint">← → 切换卡片</span>
               </div>
             </div>
@@ -685,13 +725,16 @@
   function viewPhrases() {
     app.innerHTML = `
       <h1 class="page-title">情景短语</h1>
-      <p class="page-sub">按场景整理的实用句子，点击 🔊 跟读，模仿语调。</p>
+      <p class="page-sub">按场景整理的实用句子，点击 👩 / 👨 跟读，模仿语调。<span class="ja">带色块的句子展示了韩语和日语逐词对应的关系。</span></p>
       ${PHRASES.map((g) => `
         <div class="phrase-group">
           <h2 class="section-title">${esc(g.scene)}</h2>
           ${g.items.map((p) => `
             <div class="card phrase">
-              <div class="w"><div class="k">${esc(p.ko)}</div><div class="r">${esc(p.roman)}</div><div class="z">${esc(p.zh)}</div></div>
+              <div class="w"><div class="k">${esc(p.ko)}</div><div class="r">${esc(p.roman)}</div><div class="z">${esc(p.zh)}</div>
+                ${JA_PHRASES[p.ko] ? `<div class="ja ja-line"><span class="ja-tag">日</span>${jt(JA_PHRASES[p.ko])}</div>` : ''}
+                ${JA_GLOSS[p.ko] ? `<div class="ja gloss">${JA_GLOSS[p.ko].map(([k, j]) => `<span class="gl"><span class="ko">${esc(k)}</span>${jt(j)}</span>`).join('')}</div>` : ''}
+              </div>
               ${dualBtns(p.ko)}
             </div>`).join('')}
         </div>`).join('')}`;
@@ -707,12 +750,101 @@
           <div class="card">
             <h3><span class="n">${i + 1}</span>${esc(g.title)}</h3>
             <p>${esc(g.body)}</p>
-            ${g.examples.map((x) => {
+            ${JA_GRAMMAR[i] ? `<div class="how ja ja-how"><b>日语对照：</b>${esc(JA_GRAMMAR[i].note)}</div>` : ''}
+            ${g.examples.map((x, k) => {
               const say = x.ko.split('→').pop().trim();
-              return `<div class="ex">${speakBtn(say)}<div><div class="k">${esc(x.ko)}</div><div class="z">${esc(x.zh)}</div></div></div>`;
+              const ja = JA_GRAMMAR[i] && JA_GRAMMAR[i].ex[k];
+              return `<div class="ex">${speakBtn(say)}<div><div class="k">${esc(x.ko)}</div><div class="z">${esc(x.zh)}</div>${ja ? `<div class="ja ja-ex"><span class="ja-tag">日</span>${jt(ja)}</div>` : ''}</div></div>`;
             }).join('')}
           </div>`).join('')}
+      </div>
+
+      <h2 class="section-title">常用助词一览 <small><span class="ja">与日语助词对照</span></small></h2>
+      <div class="card table-wrap">
+        <table class="rule-table particle-table">
+          <thead><tr><th>韩语</th><th>意思</th><th class="ja">日语</th><th>例句</th></tr></thead>
+          <tbody>${PARTICLES.map(([ko, zh, ja, exKo, exJa]) => `
+            <tr>
+              <td class="ko"><b>${esc(ko)}</b></td>
+              <td>${esc(zh)}</td>
+              <td class="ja">${jt(ja)}</td>
+              <td><div class="pt-ex"><span class="ko">${esc(exKo)}</span>${speakBtn(exKo)}</div><div class="ja pt-ja">${jt(exJa)}</div></td>
+            </tr>`).join('')}</tbody>
+        </table>
       </div>`;
+  }
+
+  // ---------- 页面：日韩对照 ----------
+  function viewJapanese() {
+    app.innerHTML = `
+      <h1 class="page-title">日韩对照 <span class="jp" lang="ja" style="color:var(--ink-soft);font-weight:500">韓国語と日本語</span></h1>
+      <p class="page-sub">如果你会日语，学韩语会快很多：语序相同、助词几乎一一对应、大量汉字词读音成套对应、敬语体系也很相似。</p>
+      ${jaOn ? '' : '<div class="card" style="margin-bottom:16px">💡 日语辅助目前已关闭，其他页面不会显示日语对照。点击右上角的「あ」可以重新开启。</div>'}
+
+      <div class="key-grid">
+        <div class="card key"><div class="ic">🧩</div><h3>语序相同</h3><p><span class="ko">저는 밥을 먹어요</span><br>${jt('私は ご飯を 食べます')}</p></div>
+        <div class="card key"><div class="ic">🔗</div><h3>助词对应</h3><p>는 = ${jt('は')}，가 = ${jt('が')}，를 = ${jt('を')}，에 = ${jt('に')}，도 = ${jt('も')}</p></div>
+        <div class="card key"><div class="ic">🈶</div><h3>汉字词</h3><p>학교 = ${jt('学校')}，시간 = ${jt('時間')}，가족 = ${jt('家族')}</p></div>
+        <div class="card key"><div class="ic">🙇</div><h3>敬语体系</h3><p>해요体 ≈ ${jt('です・ます')}，반말 ≈ ${jt('タメ口')}</p></div>
+      </div>
+
+      <h2 class="section-title">汉字词读音对应规律 <small>从日语音读推出韩语读音</small></h2>
+      <p class="page-sub" style="margin-bottom:14px">${esc(JA_SINO_NOTE)}</p>
+      <div class="sino-rules">
+        ${JA_SINO_RULES.map((r) => `
+          <div class="card sino-rule">
+            <h3>${esc(r.title)}</h3>
+            ${r.examples.map(([ko, kanji, yomi]) => `
+              <div class="sino-ex">
+                <span class="ko k">${esc(ko)}</span>
+                <span class="eq">=</span>
+                ${jt(kanji)}
+                <span class="yomi">${jt(yomi)}</span>
+                ${speakBtn(ko)}
+              </div>`).join('')}
+          </div>`).join('')}
+      </div>
+
+      <h2 class="section-title">日韩同形汉字词 <small>写法相同、意思相同，直接拿来用</small></h2>
+      <div class="word-list">
+        ${JA_SAME_WORDS.map(([ko, kanji, yomi, zh]) => `
+          <div class="card word-row">
+            <div class="w"><div class="k">${esc(ko)}</div><div class="ja-same">${jt(kanji)} <span class="yomi">${jt(yomi)}</span></div><div class="z">${esc(zh)}</div></div>
+            ${speakBtn(ko)}
+          </div>`).join('')}
+      </div>
+
+      <h2 class="section-title">⚠️ 易混同形词 <small>汉字一样，意思不一样</small></h2>
+      <div class="card table-wrap">
+        <table class="rule-table ff-table">
+          <thead><tr><th>韩语</th><th>汉字</th><th>韩语意思</th><th>日语意思</th><th>中文意思</th></tr></thead>
+          <tbody>${JA_FALSE_FRIENDS.map(([ko, kanji, mko, mja, mzh]) => `
+            <tr>
+              <td><div class="pt-ex"><span class="ko"><b>${esc(ko)}</b></span>${speakBtn(ko)}</div></td>
+              <td>${jt(kanji)}</td>
+              <td><b style="color:var(--green)">${esc(mko)}</b></td>
+              <td>${esc(mja)}</td>
+              <td style="color:var(--ink-soft)">${esc(mzh)}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>
+
+      <h2 class="section-title">语体与敬语 <small>和日语的「丁寧語・尊敬語・謙譲語」很像</small></h2>
+      <div class="card table-wrap">
+        <table class="rule-table">
+          <thead><tr><th>韩语</th><th>说明</th><th>日语</th></tr></thead>
+          <tbody>${JA_SPEECH_LEVELS.map(([ko, zh, ja]) => `<tr><td class="ko"><b>${esc(ko)}</b></td><td>${esc(zh)}</td><td>${jt(ja)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <h3 style="font-size:16px;margin:20px 0 10px">特殊敬语词</h3>
+      <div class="card table-wrap">
+        <table class="rule-table">
+          <thead><tr><th>韩语（普通 → 敬语）</th><th>意思</th><th>日语</th></tr></thead>
+          <tbody>${JA_HONORIFIC_WORDS.map(([ko, zh, ja]) => `<tr><td><div class="pt-ex"><span class="ko"><b>${esc(ko)}</b></span>${speakBtn(ko.split('→').pop().trim())}</div></td><td>${esc(zh)}</td><td>${jt(ja)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+
+      <p style="margin-top:24px"><a class="btn" href="#/grammar">查看助词对照表 →</a> <a class="btn" href="#/quiz">做「日语 → 韩语」测验 →</a></p>`;
   }
 
   // ---------- 页面：测验 ----------
@@ -721,6 +853,7 @@
     { id: 'ko2zh', icon: '🇰🇷', title: '韩语 → 中文', desc: '看韩语单词，选出中文意思' },
     { id: 'zh2ko', icon: '🇨🇳', title: '中文 → 韩语', desc: '看中文，选出对应的韩语' },
     { id: 'listen', icon: '🎧', title: '听音选词', desc: '听发音，选出听到的单词' },
+    { id: 'ja2ko', icon: 'あ', title: '日语 → 韩语', desc: '看日语，选出对应的韩语', cls: 'ja' },
   ];
   const QUIZ_LEN = 10;
 
@@ -732,12 +865,16 @@
         return { prompt: l.ch, promptKo: true, answer: l.roman, options: shuffle([l.roman, ...wrong]), speak: l.sound, optKo: false };
       });
     }
-    return shuffle(ALL_WORDS).slice(0, QUIZ_LEN).map((w) => {
+    const source = mode === 'ja2ko' ? ALL_WORDS.filter((w) => JA_VOCAB[w.ko]) : ALL_WORDS;
+    return shuffle(source).slice(0, QUIZ_LEN).map((w) => {
       // 干扰项：与正确答案的韩语和中文都不同，且彼此不重复
       const others = shuffle(ALL_WORDS.filter((x) => x.ko !== w.ko && x.zh !== w.zh));
       const pick = (key) => [...new Set(others.map((x) => x[key]))].slice(0, 3);
       if (mode === 'ko2zh') {
         return { prompt: w.ko, promptKo: true, answer: w.zh, options: shuffle([w.zh, ...pick('zh')]), speak: w.ko, optKo: false, word: w };
+      }
+      if (mode === 'ja2ko') {
+        return { prompt: JA_VOCAB[w.ko][0], promptJa: true, answer: w.ko, options: shuffle([w.ko, ...pick('ko')]), speak: w.ko, optKo: true, word: w };
       }
       return {
         prompt: mode === 'listen' ? '🔊' : w.zh, promptKo: false, listen: mode === 'listen',
@@ -755,7 +892,7 @@
         <p class="page-sub">每轮 ${QUIZ_LEN} 题。历史最佳：<b>${progress.quiz.best}</b> / ${QUIZ_LEN}</p>
         <div class="quiz-setup">
           ${QUIZ_MODES.map((m) => `
-            <button class="card mode" data-qmode="${m.id}">
+            <button class="card mode ${m.cls || ''}" data-qmode="${m.id}">
               <div class="ic">${m.icon}</div><h3>${m.title}</h3><p>${m.desc}</p>
             </button>`).join('')}
         </div>`;
@@ -772,7 +909,9 @@
             ${q.listen
               ? `<button class="btn btn-primary" style="font-size:22px;padding:16px 28px;margin:14px 0 8px" data-speak="${esc(q.speak)}">🔊 播放</button>
                  <div class="listen-alt">换个声音听：${dualBtns(q.speak, true)}</div>`
-              : `<div class="prompt ${q.promptKo ? 'ko' : ''}">${esc(q.prompt)}</div>`}
+              : q.promptJa
+                ? `<div class="prompt prompt-ja jp" lang="ja">${esc(q.prompt)}</div>`
+                : `<div class="prompt ${q.promptKo ? 'ko' : ''}">${esc(q.prompt)}</div>`}
             <div class="options">
               ${q.options.map((o) => `<button class="option ${q.optKo ? 'ko' : ''}" data-opt="${esc(o)}">${esc(o)}</button>`).join('')}
             </div>
@@ -853,7 +992,7 @@
   // ---------- 路由 ----------
   const ROUTES = {
     home: viewHome, alphabet: viewAlphabet, pronounce: viewPronounce, builder: viewBuilder, words: viewWords,
-    phrases: viewPhrases, grammar: viewGrammar, quiz: viewQuiz,
+    phrases: viewPhrases, grammar: viewGrammar, quiz: viewQuiz, japanese: viewJapanese,
   };
   let cleanup = null;
   function render() {
@@ -881,6 +1020,14 @@
     if (b) speak(b.dataset.speak, null, b.dataset.gender);
   });
   setGender(voicePrefs.gender);
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-ja-toggle]')) return;
+    jaOn = !jaOn;
+    try { localStorage.setItem(JA_KEY, jaOn ? 'on' : 'off'); } catch (err) { /* 忽略 */ }
+    applyJa();
+    toast(jaOn ? '已开启日语辅助' : '已关闭日语辅助');
+  });
+  applyJa();
   $('#menuBtn').addEventListener('click', () => {
     const open = $('#nav').classList.toggle('open');
     $('#menuBtn').setAttribute('aria-expanded', String(open));
