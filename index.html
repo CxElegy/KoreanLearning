@@ -17,10 +17,15 @@
       <span class="brand-mark">한</span>
       <span class="brand-text">韩语学堂</span>
     </a>
+    <div class="gender-switch" role="group" aria-label="默认发音声音">
+      <button data-gender-set="female" title="使用女声朗读">👩<span>女声</span></button>
+      <button data-gender-set="male" title="使用男声朗读">👨<span>男声</span></button>
+    </div>
     <button class="menu-btn" id="menuBtn" aria-label="打开菜单" aria-expanded="false">☰</button>
     <nav class="nav" id="nav">
       <a href="#/home" data-route="home">首页</a>
       <a href="#/alphabet" data-route="alphabet">字母</a>
+      <a href="#/pronounce" data-route="pronounce">发音</a>
       <a href="#/builder" data-route="builder">拼读</a>
       <a href="#/words" data-route="words">词汇</a>
       <a href="#/phrases" data-route="phrases">短语</a>
@@ -32,7 +37,7 @@
   <main id="app" class="container" tabindex="-1"></main>
 
   <footer class="footer">
-    <p>点击 🔊 可听发音（使用浏览器自带的韩语语音）。学习进度仅保存在本机浏览器中。</p>
+    <p>点击 🔊 / 👩 / 👨 可听发音（使用浏览器自带的韩语语音，右上角可切换默认男声 / 女声）。学习进度仅保存在本机浏览器中。</p>
   </footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

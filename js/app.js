@@ -66,36 +66,89 @@
     toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
   }
 
-  // ---------- 语音朗读 ----------
-  let koVoice = null;
+  // ---------- 语音朗读（男声 / 女声） ----------
+  // 浏览器自带语音的名称里通常含有性别线索；识别不出时可在“发音”页手动指定。
+  const FEMALE_RE = /female|woman|여성|여자|sunhi|heami|yuna|sora|jimin|seohyeon|soonbok|yujin|suhyun|narae|yuri|google/i;
+  const MALE_RE = /\bmale\b|\bman\b|남성|남자|injoon|bongjin|gookmin|hyunsu|minsu|jinho/i;
+  const GENDER_LABEL = { female: '女声', male: '男声' };
+  const VOICE_KEY = 'kl-voice-v1';
+  const voicePrefs = (() => {
+    const d = { gender: 'female', female: '', male: '', rate: 0.85 };
+    try { return { ...d, ...JSON.parse(localStorage.getItem(VOICE_KEY) || '{}') }; } catch (e) { return d; }
+  })();
+  const saveVoicePrefs = () => { try { localStorage.setItem(VOICE_KEY, JSON.stringify(voicePrefs)); } catch (e) { /* 忽略 */ } };
+
+  let koVoices = [];
   let warnedNoVoice = false;
-  function pickVoice() {
-    if (!('speechSynthesis' in window)) return;
-    const voices = speechSynthesis.getVoices();
-    koVoice = voices.find((v) => /^ko(-|_|$)/i.test(v.lang)) || null;
+  const hasTTS = 'speechSynthesis' in window;
+  const classifyVoice = (v) => (FEMALE_RE.test(v.name) ? 'female' : MALE_RE.test(v.name) ? 'male' : 'unknown');
+  function loadVoices() {
+    if (!hasTTS) return;
+    koVoices = speechSynthesis.getVoices().filter((v) => /^ko(-|_|$)/i.test(v.lang));
+    // 优先使用高质量的“Natural / Online / Premium”语音
+    const score = (v) => (/natural|online|premium|enhanced|neural/i.test(v.name) ? 0 : 1);
+    koVoices.sort((a, b) => score(a) - score(b));
+    document.dispatchEvent(new Event('kl-voices'));
   }
-  if ('speechSynthesis' in window) {
-    pickVoice();
-    speechSynthesis.addEventListener?.('voiceschanged', pickVoice);
+  if (hasTTS) {
+    loadVoices();
+    speechSynthesis.addEventListener?.('voiceschanged', loadVoices);
   }
-  function speak(text, rate = 0.85) {
-    if (!('speechSynthesis' in window)) {
+
+  // 为指定性别挑选语音；没有对应性别的语音时，用同一语音调整音高来模拟
+  function resolveVoice(gender) {
+    const manual = koVoices.find((v) => v.name === voicePrefs[gender]);
+    if (manual) return { voice: manual, pitch: 1, simulated: false };
+    const match = koVoices.find((v) => classifyVoice(v) === gender);
+    if (match) return { voice: match, pitch: 1, simulated: false };
+    const other = gender === 'female' ? 'male' : 'female';
+    const unknown = koVoices.filter((v) => classifyVoice(v) === 'unknown');
+    if (gender === 'female' && unknown[0]) return { voice: unknown[0], pitch: 1, simulated: false };
+    if (gender === 'male' && unknown.length > 1) return { voice: unknown[1], pitch: 1, simulated: false };
+    const base = koVoices.find((v) => classifyVoice(v) === other) || unknown[0] || koVoices[0] || null;
+    return { voice: base, pitch: gender === 'male' ? 0.6 : 1.35, simulated: true };
+  }
+
+  function speak(text, rate, gender) {
+    if (!hasTTS) {
       toast('当前浏览器不支持语音朗读，建议使用 Chrome / Edge / Safari');
       return;
     }
+    gender = gender || voicePrefs.gender;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ko-KR';
-    u.rate = rate;
-    if (koVoice) u.voice = koVoice;
-    else if (!warnedNoVoice && speechSynthesis.getVoices().length) {
+    u.rate = rate || voicePrefs.rate;
+    const r = resolveVoice(gender);
+    if (r.voice) u.voice = r.voice;
+    u.pitch = r.pitch;
+    if (!r.voice && !warnedNoVoice && speechSynthesis.getVoices().length) {
       warnedNoVoice = true;
-      toast('未检测到韩语语音包，发音可能不准确。可在系统设置中安装韩语语音。');
+      toast('未检测到韩语语音包，发音可能不准确。请到“发音”页查看安装方法。');
     }
     speechSynthesis.speak(u);
   }
+  const slowRate = () => Math.max(0.5, voicePrefs.rate - 0.15);
+
+  // 单个朗读按钮（使用当前选择的声音）
   const speakBtn = (text, label = '朗读') =>
     `<button class="speak" data-speak="${esc(text)}" aria-label="${esc(label)}：${esc(text)}" title="朗读">🔊</button>`;
+  // 女声 / 男声 一对按钮，方便对比
+  const dualBtns = (text, small = false) => `
+    <span class="dual${small ? ' dual-sm' : ''}">
+      <button class="speak-g female" data-speak="${esc(text)}" data-gender="female" aria-label="女声朗读：${esc(text)}" title="女声朗读">👩<span>女声</span></button>
+      <button class="speak-g male" data-speak="${esc(text)}" data-gender="male" aria-label="男声朗读：${esc(text)}" title="男声朗读">👨<span>男声</span></button>
+    </span>`;
+
+  function setGender(g) {
+    voicePrefs.gender = g;
+    saveVoicePrefs();
+    $$('[data-gender-set]').forEach((b) => {
+      const on = b.dataset.genderSet === g;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  }
 
   // ---------- 韩文音节工具 ----------
   const SBASE = 0xac00, SCOUNT = 11172;
@@ -117,6 +170,7 @@
     const daily = ALL_WORDS[dayIndex % ALL_WORDS.length];
     const steps = [
       ['alphabet', '认识韩文字母', '14 个基本辅音、10 个基本元音，以及双辅音和复合元音。'],
+      ['pronounce', '发音讲解', '松音·送气音·紧音、元音口型、收音和音变，男声女声对比听。'],
       ['builder', '学会拼读音节', '像搭积木一样把辅音和元音组合成字，理解收音规则。'],
       ['words', '积累核心词汇', `${total} 个高频词，翻卡记忆并标记掌握情况。`],
       ['phrases', '情景短语', '见面、点餐、问路、求助……开口就能用。'],
@@ -149,7 +203,7 @@
       <h2 class="section-title">今日一词</h2>
       <div class="card daily">
         <span class="word">${esc(daily.ko)}</span>
-        ${speakBtn(daily.ko)}
+        ${dualBtns(daily.ko)}
         <div class="meta"><div style="color:var(--red);font-weight:700">${esc(daily.roman)}</div><div>${esc(daily.zh)}</div></div>
       </div>
 
@@ -206,9 +260,13 @@
         <div>
           <h3>${l.ch} ${l.name ? `<span class="ko">（${esc(l.name)}）</span>` : ''} · <span style="color:var(--red)">${esc(l.roman)}</span></h3>
           <p class="tip">${esc(l.tip)}</p>
+          <div class="how"><b>发音方法：</b>${esc(HOW_TO[l.ch] || '')}</div>
+          <div class="listen-row">
+            <span class="listen-label ko">${esc(l.sound)}</span>${dualBtns(l.sound)}
+            ${l.name ? `<span class="listen-label">名称 <span class="ko">${esc(l.name)}</span></span>${dualBtns(l.name)}` : ''}
+          </div>
           <div class="examples">
-            <button class="btn btn-sm" data-speak="${esc(l.sound)}">🔊 ${esc(l.sound)}</button>
-            ${l.name ? `<button class="btn btn-sm" data-speak="${esc(l.name)}">🔊 名称 ${esc(l.name)}</button>` : ''}
+            <span class="ex-label">组合练习：</span>
             ${[...new Set(samples)].map((s) => `<button class="btn btn-sm btn-ghost ko" data-speak="${s}">${s}</button>`).join('')}
           </div>
         </div>`;
@@ -224,6 +282,186 @@
       $('#letterDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
     return () => app.removeEventListener('click', onLetterClick);
+  }
+
+  // ---------- 页面：发音讲解 ----------
+  function viewPronounce() {
+    const toc = [
+      ['p-voice', '声音设置'], ['p-keys', '发音特点'], ['p-triad', '松音·送气音·紧音'],
+      ['p-vowel', '易混元音'], ['p-batchim', '收音'], ['p-rules', '音变规则'], ['p-mistakes', '常见误区'],
+    ];
+    app.innerHTML = `
+      <h1 class="page-title">发音讲解</h1>
+      <p class="page-sub">每个例子都可以分别用 👩 女声 和 👨 男声 收听，对比着练效果更好。建议跟读时录下自己的声音再对比。</p>
+      <nav class="toc chips" aria-label="本页目录">
+        ${toc.map(([id, t]) => `<a class="chip" href="#/pronounce" data-jump="${id}">${t}</a>`).join('')}
+      </nav>
+
+      <h2 class="section-title" id="p-voice">🔈 声音设置 <small>选择男声 / 女声使用的语音</small></h2>
+      <div class="card voice-panel" id="voicePanel"></div>
+
+      <h2 class="section-title" id="p-keys">韩语发音的 4 个特点</h2>
+      <div class="key-grid">
+        ${PRON_KEYS.map((k) => `<div class="card key"><div class="ic">${k.icon}</div><h3>${esc(k.title)}</h3><p>${esc(k.text)}</p></div>`).join('')}
+      </div>
+
+      <h2 class="section-title" id="p-triad">松音 · 送气音 · 紧音 <small>韩语辅音最重要的区别</small></h2>
+      <div class="card triad-legend">
+        ${Object.values(TRIAD_TYPES).map((t, i) => `<div class="legend t${i}"><b>${esc(t.name)}</b><p>${esc(t.desc)}</p></div>`).join('')}
+        <p class="paper-test">🧻 <b>纸片测试：</b>拿一张薄纸放在嘴前 3 厘米处。读送气音时纸片明显飘动，读紧音时纸片几乎不动，读松音时轻微晃动。</p>
+      </div>
+      <div class="triads">
+        ${CONSONANT_TRIADS.map((g) => `
+          <div class="card triad">
+            <div class="triad-head ko">${esc(g.group)}</div>
+            <div class="triad-cells">
+              ${g.cells.map((c) => `
+                <div class="triad-cell ${c.type}">
+                  <div class="tt">${esc(TRIAD_TYPES[c.type].name.split(' ')[0])}</div>
+                  <div class="syl ko">${esc(c.syl)}</div>
+                  ${dualBtns(c.syl, true)}
+                  <div class="tw"><span class="ko">${esc(c.word)}</span> ${esc(c.zh)}</div>
+                  ${dualBtns(c.word, true)}
+                </div>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <h2 class="section-title" id="p-vowel">易混元音 <small>注意嘴唇的形状</small></h2>
+      <div class="pair-grid">
+        ${VOWEL_PAIRS.map((v) => `
+          <div class="card pair">
+            <h3 class="ko">${esc(v.pair)}</h3>
+            <p>${esc(v.tip)}</p>
+            ${v.words.map((w) => `<div class="pair-word"><span class="ko k">${esc(w.ko)}</span><span class="z">${esc(w.zh)}</span>${dualBtns(w.ko, true)}</div>`).join('')}
+          </div>`).join('')}
+      </div>
+
+      <h2 class="section-title" id="p-batchim">收音的发音方法 <small>只做口型、不放气</small></h2>
+      <div class="batchim-grid">
+        ${BATCHIM_HOW.map((b) => `
+          <div class="card batchim">
+            <div class="b-top"><span class="b-syl ko">${esc(b.syl)}</span><span class="b-ch ko">收音 ${esc(b.ch)}</span></div>
+            <p>${esc(b.how)}</p>
+            ${dualBtns(b.syl, true)}
+          </div>`).join('')}
+      </div>
+
+      <h2 class="section-title" id="p-rules">音变规则 <small>写法 → [实际读音]</small></h2>
+      <div class="rules">
+        ${SOUND_RULES.map((r, i) => `
+          <div class="card rule">
+            <h3><span class="n">${i + 1}</span>${esc(r.name)} <span class="ko rule-ko">${esc(r.ko)}</span></h3>
+            <p>${esc(r.rule)}</p>
+            <div class="rule-examples">
+              ${r.examples.map((x) => `
+                <div class="rule-ex">
+                  <div class="rx-text"><span class="ko k">${esc(x.ko)}</span><span class="arrow">→</span><span class="ko pron">[${esc(x.pron)}]</span><span class="z">${esc(x.zh)}</span></div>
+                  ${dualBtns(x.ko, true)}
+                </div>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <h2 class="section-title" id="p-mistakes">中国学习者常见误区</h2>
+      <div class="card mistakes-list">
+        ${COMMON_MISTAKES.map((m) => `
+          <div class="mk">
+            <div class="mk-wrong">✗ ${esc(m.wrong)}</div>
+            <div class="mk-right">✓ ${esc(m.right)}</div>
+          </div>`).join('')}
+      </div>`;
+
+    // 声音设置面板
+    const renderVoicePanel = () => {
+      const panel = $('#voicePanel');
+      if (!panel) return;
+      if (!hasTTS) {
+        panel.innerHTML = '<p>当前浏览器不支持语音朗读，请使用最新版 Chrome、Edge 或 Safari。</p>';
+        return;
+      }
+      const opts = (g) => `
+        <option value="">自动选择</option>
+        ${koVoices.map((v) => `<option value="${esc(v.name)}" ${voicePrefs[g] === v.name ? 'selected' : ''}>${esc(v.name)}${classifyVoice(v) !== 'unknown' ? `（${GENDER_LABEL[classifyVoice(v)]}）` : ''}</option>`).join('')}`;
+      const status = (g) => {
+        const r = resolveVoice(g);
+        if (!r.voice) return '<span class="vs warn">未找到韩语语音</span>';
+        return r.simulated
+          ? `<span class="vs warn">本设备没有韩语${GENDER_LABEL[g]}，已用 ${esc(r.voice.name)} 调整音高模拟</span>`
+          : `<span class="vs ok">使用：${esc(r.voice.name)}</span>`;
+      };
+      const females = koVoices.filter((v) => classifyVoice(v) === 'female').length;
+      const males = koVoices.filter((v) => classifyVoice(v) === 'male').length;
+      panel.innerHTML = `
+        <div class="voice-rows">
+          ${['female', 'male'].map((g) => `
+            <div class="voice-row">
+              <div class="vr-head">
+                <b>${g === 'female' ? '👩' : '👨'} ${GENDER_LABEL[g]}</b>
+                <button class="btn btn-sm" data-speak="안녕하세요. 만나서 반갑습니다." data-gender="${g}">试听</button>
+              </div>
+              <select class="voice-select" data-voice-for="${g}" aria-label="${GENDER_LABEL[g]}使用的语音">${opts(g)}</select>
+              ${status(g)}
+            </div>`).join('')}
+        </div>
+        <div class="voice-extra">
+          <label>默认声音：
+            <span class="toggle">
+              <button data-gender-set="female" class="${voicePrefs.gender === 'female' ? 'active' : ''}">👩 女声</button>
+              <button data-gender-set="male" class="${voicePrefs.gender === 'male' ? 'active' : ''}">👨 男声</button>
+            </span>
+          </label>
+          <label>语速：<input type="range" id="rateRange" min="0.5" max="1.2" step="0.05" value="${voicePrefs.rate}"> <span id="rateVal">${voicePrefs.rate.toFixed(2)}×</span></label>
+        </div>
+        <p class="voice-summary">检测到 ${koVoices.length} 个韩语语音（女声 ${females} 个，男声 ${males} 个${koVoices.length - females - males ? `，未识别性别 ${koVoices.length - females - males} 个` : ''}）。</p>
+        ${(!males || !females) ? `
+          <details class="voice-help" ${koVoices.length ? '' : 'open'}>
+            <summary>想要更自然的男声 / 女声？</summary>
+            <ul>
+              <li><b>电脑（推荐）：</b>使用 <b>Microsoft Edge</b> 浏览器打开本站，自带高质量韩语男声 InJoon 和女声 SunHi。</li>
+              <li><b>Windows：</b>设置 → 时间和语言 → 语音 → 添加语音 → 韩语。</li>
+              <li><b>Mac：</b>系统设置 → 辅助功能 → 朗读内容 → 系统声音 → 管理声音 → 韩语，下载需要的声音。</li>
+              <li><b>iPhone / iPad：</b>设置 → 辅助功能 → 朗读内容 → 声音 → 韩语，下载声音后在 Safari 中使用。</li>
+              <li><b>安卓：</b>设置 → 文字转语音 → 首选引擎（Google 或三星）→ 安装韩语语音数据，可选择不同声音。</li>
+            </ul>
+            <p>安装后刷新本页即可，在上方下拉框中为男声 / 女声分别选择语音。</p>
+          </details>` : ''}`;
+    };
+    const onChange = (e) => {
+      const sel = e.target.closest('[data-voice-for]');
+      if (sel) {
+        voicePrefs[sel.dataset.voiceFor] = sel.value;
+        saveVoicePrefs();
+        renderVoicePanel();
+        speak('안녕하세요', null, sel.dataset.voiceFor);
+      }
+    };
+    const onInput = (e) => {
+      if (e.target.id === 'rateRange') {
+        voicePrefs.rate = Number(e.target.value);
+        saveVoicePrefs();
+        $('#rateVal').textContent = voicePrefs.rate.toFixed(2) + '×';
+      }
+    };
+    const onClick = (e) => {
+      const j = e.target.closest('[data-jump]');
+      if (j) {
+        e.preventDefault();
+        const t = document.getElementById(j.dataset.jump);
+        if (t) window.scrollTo({ top: t.getBoundingClientRect().top + window.scrollY - 76, behavior: 'smooth' });
+      }
+    };
+    app.addEventListener('change', onChange);
+    app.addEventListener('input', onInput);
+    app.addEventListener('click', onClick);
+    document.addEventListener('kl-voices', renderVoicePanel);
+    renderVoicePanel();
+    return () => {
+      app.removeEventListener('change', onChange);
+      app.removeEventListener('input', onInput);
+      app.removeEventListener('click', onClick);
+      document.removeEventListener('kl-voices', renderVoicePanel);
+    };
   }
 
   // ---------- 页面：拼读 ----------
@@ -283,16 +521,16 @@
       if (b) {
         state[b.dataset.k] = Number(b.dataset.i);
         update();
-        speak(compose(state.l, state.v, state.t), 0.7);
+        speak(compose(state.l, state.v, state.t), slowRate());
         return;
       }
-      if (e.target.closest('#playSyl')) speak($('#syl').textContent, 0.7);
+      if (e.target.closest('#playSyl')) speak($('#syl').textContent, slowRate());
       if (e.target.closest('#randSyl')) {
         state.l = Math.floor(Math.random() * INITIALS.length);
         state.v = Math.floor(Math.random() * MEDIALS.length);
         state.t = Math.random() < 0.5 ? 0 : Math.floor(Math.random() * FINALS.length);
         update();
-        speak($('#syl').textContent, 0.7);
+        speak($('#syl').textContent, slowRate());
       }
       if (e.target.closest('#dcPlay')) {
         const t = $('#dcInput').value.trim();
@@ -378,9 +616,9 @@
           <div class="flash-controls">
             <button class="btn btn-sm" id="prevW" aria-label="上一张">← 上一张</button>
             <span class="count">${s.idx + 1} / ${list.length}</span>
-            ${speakBtn(w.ko)}
             <button class="btn btn-sm" id="nextW" aria-label="下一张">下一张 →</button>
           </div>
+          <div class="flash-listen">${dualBtns(w.ko)}</div>
           <div class="flash-grade">
             <button class="btn btn-dont" id="dontW">✗ 不认识</button>
             <button class="btn btn-know" id="knowW">✓ 认识</button>
@@ -454,7 +692,7 @@
           ${g.items.map((p) => `
             <div class="card phrase">
               <div class="w"><div class="k">${esc(p.ko)}</div><div class="r">${esc(p.roman)}</div><div class="z">${esc(p.zh)}</div></div>
-              ${speakBtn(p.ko)}
+              ${dualBtns(p.ko)}
             </div>`).join('')}
         </div>`).join('')}`;
   }
@@ -532,7 +770,8 @@
           <div class="card quiz-q" style="margin-top:16px">
             <div class="prompt-label">${q.listen ? '听一听，选出你听到的词' : '选出正确答案'}</div>
             ${q.listen
-              ? `<button class="btn btn-primary" style="font-size:22px;padding:16px 28px;margin:14px 0" data-speak="${esc(q.speak)}">🔊 播放</button>`
+              ? `<button class="btn btn-primary" style="font-size:22px;padding:16px 28px;margin:14px 0 8px" data-speak="${esc(q.speak)}">🔊 播放</button>
+                 <div class="listen-alt">换个声音听：${dualBtns(q.speak, true)}</div>`
               : `<div class="prompt ${q.promptKo ? 'ko' : ''}">${esc(q.prompt)}</div>`}
             <div class="options">
               ${q.options.map((o) => `<button class="option ${q.optKo ? 'ko' : ''}" data-opt="${esc(o)}">${esc(o)}</button>`).join('')}
@@ -613,7 +852,7 @@
 
   // ---------- 路由 ----------
   const ROUTES = {
-    home: viewHome, alphabet: viewAlphabet, builder: viewBuilder, words: viewWords,
+    home: viewHome, alphabet: viewAlphabet, pronounce: viewPronounce, builder: viewBuilder, words: viewWords,
     phrases: viewPhrases, grammar: viewGrammar, quiz: viewQuiz,
   };
   let cleanup = null;
@@ -631,9 +870,17 @@
 
   // 全局：朗读按钮
   document.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-gender-set]');
+    if (g) {
+      setGender(g.dataset.genderSet);
+      speak('안녕하세요');
+      toast(`已切换为${GENDER_LABEL[g.dataset.genderSet]}`);
+      return;
+    }
     const b = e.target.closest('[data-speak]');
-    if (b) speak(b.dataset.speak);
+    if (b) speak(b.dataset.speak, null, b.dataset.gender);
   });
+  setGender(voicePrefs.gender);
   $('#menuBtn').addEventListener('click', () => {
     const open = $('#nav').classList.toggle('open');
     $('#menuBtn').setAttribute('aria-expanded', String(open));
