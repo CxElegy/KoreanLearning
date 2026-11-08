@@ -575,3 +575,12 @@ body.ja-off .ja { display: none !important; }
   .topbar .gender-switch { margin-left: auto; order: 0; }
   .ja-toggle { order: 0; margin-left: 6px; }
 }
+
+/* 专业音频说明 */
+.pro-note { background: var(--green-soft); border-radius: 12px; padding: 12px 16px; }
+.pro-note b { color: var(--green); }
+.pro-note p { margin: 4px 0 10px; font-size: 14px; color: var(--ink-soft); }
+.dual-demo { display: flex; gap: 8px; flex-wrap: wrap; }
+.device-voices { margin-top: 16px; font-size: 14px; }
+.device-voices summary { cursor: pointer; color: var(--ink-soft); }
+.device-voices .voice-rows { margin-top: 12px; }

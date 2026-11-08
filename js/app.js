@@ -109,7 +109,34 @@
     return { voice: base, pitch: gender === 'male' ? 0.6 : 1.35, simulated: true };
   }
 
+  // 预先生成的专业音频（微软神经语音：女声 SunHi / 男声 InJoon），见 scripts/gen_audio.py
+  const AUDIO = window.AUDIO_MANIFEST || {};
+  const AUDIO_BASE_RATE = 0.9; // 生成时语速为 -10%
+  let currentAudio = null;
+  function stopAudio() {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  }
+  function playRecorded(text, rate, gender) {
+    const id = AUDIO[String(text).trim()];
+    if (!id) return false;
+    stopAudio();
+    if (hasTTS) speechSynthesis.cancel();
+    const a = new Audio(`audio/${gender === 'male' ? 'm' : 'f'}/${id}.mp3`);
+    a.playbackRate = Math.min(2, Math.max(0.5, (rate || voicePrefs.rate) / AUDIO_BASE_RATE));
+    currentAudio = a;
+    a.play().catch(() => { if (currentAudio === a) { currentAudio = null; speakTTS(text, rate, gender); } });
+    return true;
+  }
+
   function speak(text, rate, gender) {
+    gender = gender || voicePrefs.gender;
+    if (playRecorded(text, rate, gender)) return;
+    speakTTS(text, rate, gender);
+  }
+
+  // 没有预生成音频的文本（如拼读器里带收音的任意音节）用浏览器语音朗读
+  function speakTTS(text, rate, gender) {
+    stopAudio();
     if (!hasTTS) {
       toast('当前浏览器不支持语音朗读，建议使用 Chrome / Edge / Safari');
       return;
@@ -323,7 +350,7 @@
     ];
     app.innerHTML = `
       <h1 class="page-title">发音讲解</h1>
-      <p class="page-sub">每个例子都可以分别用 👩 女声 和 👨 男声 收听，对比着练效果更好。建议跟读时录下自己的声音再对比。</p>
+      <p class="page-sub">每个例子都可以分别用 👩 女声 和 👨 男声 收听（专业神经语音录制），对比着练效果更好。建议跟读时录下自己的声音再对比。</p>
       <nav class="toc chips" aria-label="本页目录">
         ${toc.map(([id, t, cls]) => `<a class="chip ${cls || ''}" href="#/pronounce" data-jump="${id}">${t}</a>`).join('')}
       </nav>
@@ -415,10 +442,6 @@
     const renderVoicePanel = () => {
       const panel = $('#voicePanel');
       if (!panel) return;
-      if (!hasTTS) {
-        panel.innerHTML = '<p>当前浏览器不支持语音朗读，请使用最新版 Chrome、Edge 或 Safari。</p>';
-        return;
-      }
       const opts = (g) => `
         <option value="">自动选择</option>
         ${koVoices.map((v) => `<option value="${esc(v.name)}" ${voicePrefs[g] === v.name ? 'selected' : ''}>${esc(v.name)}${classifyVoice(v) !== 'unknown' ? `（${GENDER_LABEL[classifyVoice(v)]}）` : ''}</option>`).join('')}`;
@@ -431,18 +454,17 @@
       };
       const females = koVoices.filter((v) => classifyVoice(v) === 'female').length;
       const males = koVoices.filter((v) => classifyVoice(v) === 'male').length;
+      const nRec = Object.keys(AUDIO).length;
       panel.innerHTML = `
-        <div class="voice-rows">
-          ${['female', 'male'].map((g) => `
-            <div class="voice-row">
-              <div class="vr-head">
-                <b>${g === 'female' ? '👩' : '👨'} ${GENDER_LABEL[g]}</b>
-                <button class="btn btn-sm" data-speak="안녕하세요. 만나서 반갑습니다." data-gender="${g}">试听</button>
-              </div>
-              <select class="voice-select" data-voice-for="${g}" aria-label="${GENDER_LABEL[g]}使用的语音">${opts(g)}</select>
-              ${status(g)}
-            </div>`).join('')}
-        </div>
+        ${nRec ? `
+          <div class="pro-note">
+            <b>✅ 全站使用预先生成的专业神经语音音频</b>
+            <p>👩 女声 SunHi、👨 男声 InJoon（微软神经语音，首尔标准音），共 ${nRec} 条 × 2，任何设备听到的效果都一样。</p>
+            <div class="dual-demo">
+              <button class="btn btn-sm" data-speak="안녕하세요. 만나서 반갑습니다." data-gender="female">👩 试听女声</button>
+              <button class="btn btn-sm" data-speak="안녕하세요. 만나서 반갑습니다." data-gender="male">👨 试听男声</button>
+            </div>
+          </div>` : ''}
         <div class="voice-extra">
           <label>默认声音：
             <span class="toggle">
@@ -452,19 +474,22 @@
           </label>
           <label>语速：<input type="range" id="rateRange" min="0.5" max="1.2" step="0.05" value="${voicePrefs.rate}"> <span id="rateVal">${voicePrefs.rate.toFixed(2)}×</span></label>
         </div>
-        <p class="voice-summary">检测到 ${koVoices.length} 个韩语语音（女声 ${females} 个，男声 ${males} 个${koVoices.length - females - males ? `，未识别性别 ${koVoices.length - females - males} 个` : ''}）。</p>
-        ${(!males || !females) ? `
-          <details class="voice-help" ${koVoices.length ? '' : 'open'}>
-            <summary>想要更自然的男声 / 女声？</summary>
-            <ul>
-              <li><b>电脑（推荐）：</b>使用 <b>Microsoft Edge</b> 浏览器打开本站，自带高质量韩语男声 InJoon 和女声 SunHi。</li>
-              <li><b>Windows：</b>设置 → 时间和语言 → 语音 → 添加语音 → 韩语。</li>
-              <li><b>Mac：</b>系统设置 → 辅助功能 → 朗读内容 → 系统声音 → 管理声音 → 韩语，下载需要的声音。</li>
-              <li><b>iPhone / iPad：</b>设置 → 辅助功能 → 朗读内容 → 声音 → 韩语，下载声音后在 Safari 中使用。</li>
-              <li><b>安卓：</b>设置 → 文字转语音 → 首选引擎（Google 或三星）→ 安装韩语语音数据，可选择不同声音。</li>
-            </ul>
-            <p>安装后刷新本页即可，在上方下拉框中为男声 / 女声分别选择语音。</p>
-          </details>` : ''}`;
+        <details class="device-voices">
+          <summary>设备语音（仅用于拼读器里带收音的音节、拆字器等少数没有预生成音频的内容）</summary>
+          ${!hasTTS ? '<p>当前浏览器不支持语音朗读。</p>' : `
+          <div class="voice-rows">
+            ${['female', 'male'].map((g) => `
+              <div class="voice-row">
+                <div class="vr-head">
+                  <b>${g === 'female' ? '👩' : '👨'} ${GENDER_LABEL[g]}</b>
+                  <button class="btn btn-sm" data-tts-test="${g}">试听</button>
+                </div>
+                <select class="voice-select" data-voice-for="${g}" aria-label="${GENDER_LABEL[g]}使用的设备语音">${opts(g)}</select>
+                ${status(g)}
+              </div>`).join('')}
+          </div>
+          <p class="voice-summary">本设备检测到 ${koVoices.length} 个韩语语音（女声 ${females} 个，男声 ${males} 个${koVoices.length - females - males ? `，未识别性别 ${koVoices.length - females - males} 个` : ''}）。</p>`}
+        </details>`;
     };
     const onChange = (e) => {
       const sel = e.target.closest('[data-voice-for]');
@@ -472,7 +497,7 @@
         voicePrefs[sel.dataset.voiceFor] = sel.value;
         saveVoicePrefs();
         renderVoicePanel();
-        speak('안녕하세요', null, sel.dataset.voiceFor);
+        speakTTS('안녕하세요', null, sel.dataset.voiceFor);
       }
     };
     const onInput = (e) => {
@@ -483,6 +508,8 @@
       }
     };
     const onClick = (e) => {
+      const tt = e.target.closest('[data-tts-test]');
+      if (tt) return speakTTS('안녕하세요. 만나서 반갑습니다.', null, tt.dataset.ttsTest);
       const j = e.target.closest('[data-jump]');
       if (j) {
         e.preventDefault();
@@ -1000,6 +1027,7 @@
     const view = ROUTES[route] || viewHome;
     if (cleanup) { cleanup(); cleanup = null; }
     if ('speechSynthesis' in window) speechSynthesis.cancel();
+    stopAudio();
     cleanup = view() || null;
     $$('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === (ROUTES[route] ? route : 'home')));
     $('#nav').classList.remove('open');

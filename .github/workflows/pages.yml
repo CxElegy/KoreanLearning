@@ -37,7 +37,7 @@ jobs:
       - name: Prepare site
         run: |
           mkdir -p _site
-          cp -r index.html css js _site/
+          cp -r index.html css js audio _site/
           touch _site/.nojekyll
 
       - name: Configure Pages
